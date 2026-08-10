@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Run all test_*.sh files. Exits non-zero on first failure.
+# Run all test_*.sh files. Exits non-zero if any test fails.
 set -uo pipefail
+
+# Expand unmatched globs to nothing instead of passing the literal pattern.
+shopt -s nullglob
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 FAIL=0

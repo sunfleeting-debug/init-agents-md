@@ -40,6 +40,7 @@ assert_file_exists() {
 
 assert_json_eq() {
     # assert_json_eq <json-string> <jq-filter> <expected> <label>
+    command -v jq >/dev/null 2>&1 || { echo "jq required" >&2; exit 1; }
     local actual
     actual=$(echo "$1" | jq -r "$2")
     assert_eq "$actual" "$3" "$4"
@@ -47,5 +48,5 @@ assert_json_eq() {
 
 # Resolve a fixture path. Usage: fix "node-project" "package.json"
 fix() {
-    echo "$(dirname "$0")/fixtures/$1/$2"
+    echo "${BASH_SOURCE[0]%/*}/fixtures/$1/$2"
 }
