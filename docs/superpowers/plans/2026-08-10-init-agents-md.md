@@ -1538,13 +1538,17 @@ source "$(dirname "$0")/helpers.sh"
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
+# NOTE: git stores scripts as 100644 (no exec bit on Windows), so every script
+# invocation must be prefixed with `bash ` rather than executed directly.
 # Node fixture: has tests, lint, format — but no logger; CI=none; no pre-commit
-DETECT=$("$DIR/scripts/detect-node.sh" "$(fix node-project)")
-PUBLIC_API=$("$DIR/scripts/public-api-scan.sh" "$(fix node-project)")
-GAP=$("$DIR/scripts/gap-analyzer.sh" "$DETECT" "$PUBLIC_API" "$(fix node-project)")
+DETECT=$(bash "$DIR/scripts/detect-node.sh" "$(fix node-project)")
+PUBLIC_API=$(bash "$DIR/scripts/public-api-scan.sh" "$(fix node-project)")
+GAP=$(bash "$DIR/scripts/gap-analyzer.sh" "$DETECT" "$PUBLIC_API" "$(fix node-project)")
 
-# Should propose: API docstrings (coverage < 0.8), no pre-commit
-# Should NOT propose: logger (no info), CI (test framework exists; the heuristic flags CI only if commands exist but no CI)
+# NOTE: comments corrected to match actual behavior — the fixture triggers all
+# five items: docstring-coverage (0.5 < 0.8), logger (no logger module found),
+# ci-missing (test command exists but no CI), pre-commit-missing, env-example.
+# Should propose: API docstrings (coverage < 0.8), logger, CI, pre-commit, env example
 item_count=$(echo "$GAP" | jq '.items | length')
 [ "$item_count" -ge 1 ] && pass "at least 1 gap item" || fail "expected >=1 gap items, got $item_count"
 
@@ -1619,10 +1623,13 @@ esac
 coverage=$(echo "$PUBLIC_API" | jq -r '.coverage // 1.0')
 undoc=$(echo "$PUBLIC_API" | jq -r '.undocumented | length // 0')
 if [ "$coverage" != "null" ] && [ "$coverage" != "1.00" ]; then
+    # NOTE: awk -v requires `=` (c="$coverage"). The original `-v c "$coverage"`
+    # left c unset (0), so every coverage matched `c < 0.8` (false positives)
+    # and the message always printed 0% in the percentage.
     # Use awk for float comparison
-    if awk -v c "$coverage" 'BEGIN { exit !(c < 0.8) }'; then
+    if awk -v c="$coverage" 'BEGIN { exit !(c < 0.8) }'; then
         add_item "docstring-coverage" "info" \
-            "公开 API 注释覆盖率 $(awk -v c "$coverage" 'BEGIN { printf "%.0f%%", c*100 }'),未注释数 $undoc" \
+            "公开 API 注释覆盖率 $(awk -v c="$coverage" 'BEGIN { printf "%.0f%%", c*100 }'),未注释数 $undoc" \
             "补全公开 API 的 JSDoc / docstring / Javadoc"
     fi
 fi
