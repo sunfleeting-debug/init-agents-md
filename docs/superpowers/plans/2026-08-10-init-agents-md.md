@@ -1708,7 +1708,9 @@ TMPL="$DIR/templates/sections/02-tech-stack.md"
 
 DATA='{"language":"typescript","packageManager":"pnpm","framework":"next","testFramework":"vitest","linter":"eslint"}'
 
-OUT=$("$DIR/scripts/render-section.sh" "$TMPL" "$DATA")
+# NOTE: git stores scripts as 100644 (no exec bit on Windows), so the script
+# must be invoked with `bash ` rather than executed directly.
+OUT=$(bash "$DIR/scripts/render-section.sh" "$TMPL" "$DATA")
 
 assert_contains "$OUT" "语言: typescript"  "language substituted"
 assert_contains "$OUT" "包管理器: pnpm"    "packageManager substituted"
@@ -1728,14 +1730,17 @@ Write to `skills/init-agents-md/scripts/render-section.sh`:
 
 ```bash
 #!/usr/bin/env bash
-# Render a template file by substituting {{placeholder}} tokens from a JSON file.
-# Usage: render-section.sh <template-path> <data.json>
+# Render a template file by substituting {{placeholder}} tokens from JSON data.
+# Usage: render-section.sh <template-path> <data>
+#   <data> may be a JSON literal string OR a path to a JSON file (e.g. from
+#   process substitution: render-section.sh <tmpl> <(echo "$DATA")).
 # Output: rendered template to stdout
+# Exit codes: 0 = rendered, 1 = template/python error, 2 = usage error
 
 set -uo pipefail
 
 if [ $# -lt 2 ]; then
-    echo "Usage: render-section.sh <template> <data.json>" >&2
+    echo "Usage: render-section.sh <template> <data>" >&2
     exit 2
 fi
 
@@ -1747,16 +1752,45 @@ if [ ! -f "$TMPL" ]; then
     exit 1
 fi
 
+# NOTE: cygpath guard — native Windows Python cannot open MSYS (/e/...) paths,
+# so normalize the template path to E:/... mixed mode first.
+if command -v cygpath > /dev/null 2>&1; then
+    TMPL=$(cygpath -m "$TMPL")
+fi
+
+# NOTE: this machine has only `python` (no python3); fall back like
+# detect-python.sh does.
+PY=python3
+command -v python3 > /dev/null || PY=python
+
+# NOTE: $DATA may be a JSON literal string OR a path to a JSON file (Task 20
+# passes process substitution <(echo "$DATA") -> /dev/fd/63). Resolve file
+# paths in bash (use -r, not -f: a /dev/fd pipe fails -f) so native Python
+# never opens an MSYS /dev/fd path; the JSON text goes to Python via env var.
+if [ -r "$DATA" ]; then
+    DATA_JSON=$(cat "$DATA")
+else
+    DATA_JSON="$DATA"
+fi
+
 # Walk every {{key}} token; substitute from $DATA.
 # Use Python for reliable regex (jq alone can't iterate unknown keys cleanly).
 
-python3 - "$TMPL" "$DATA" <<'PYEOF'
-import sys, re, json
-tmpl_path, data_path = sys.argv[1], sys.argv[2]
+# NOTE: template path travels via env var (not argv); the program comes from a
+# heredoc on stdin. Native Windows Python writes piped stdout in the ANSI code
+# page (GBK on Chinese systems), which mangles template UTF-8 text, so stdout
+# is reconfigured to UTF-8 with LF line endings.
+TMPL_FILE="$TMPL" DATA_JSON="$DATA_JSON" $PY - <<'PYEOF'
+import os, re, json, sys
+
+sys.stdout.reconfigure(encoding='utf-8', newline='\n')
+sys.stderr.reconfigure(encoding='utf-8')
+
+tmpl_path = os.environ['TMPL_FILE']
 with open(tmpl_path, 'r', encoding='utf-8') as f:
     text = f.read()
-with open(data_path, 'r', encoding='utf-8') as f:
-    data = json.load(f)
+
+data = json.loads(os.environ['DATA_JSON'])
 
 def repl(m):
     key = m.group(1).strip()
