@@ -2,6 +2,7 @@
 # Parse a Java project's pom.xml (or build.gradle fallback).
 # Usage: detect-java.sh <project-dir>
 # Output: JSON document
+# Exit codes: 0 = parsed, 1 = no manifest or no python, 2 = usage error
 
 set -uo pipefail
 
@@ -37,36 +38,41 @@ if [ -f "$POM" ]; then
 
     # The manifest path is passed via env var (not interpolated into the
     # Python source) so quotes/backslashes in the path cannot break parsing.
+    # On malformed XML the body degrades silently to the ${VAR:-default}
+    # values used below, matching detect-python.sh's behavior.
     eval "$(POM_FILE="$POM" $PY -c "
-import xml.etree.ElementTree as ET, json, shlex, os
-ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
-root = ET.parse(os.environ['POM_FILE']).getroot()
-parent = root.find('m:parent', ns)
-java_version = root.findtext('m:properties/m:java.version', namespaces=ns, default='')
-sb_version = ''
-if parent is not None:
-    pid = parent.findtext('m:artifactId', namespaces=ns, default='')
-    if pid == 'spring-boot-starter-parent':
-        sb_version = parent.findtext('m:version', namespaces=ns, default='')
-deps = [d.findtext('m:artifactId', namespaces=ns) for d in root.findall('m:dependencies/m:dependency', ns)]
-deps = [d for d in deps if d]
-framework = 'spring-boot' if sb_version else 'none'
-data = {
-    'buildTool': 'maven',
-    'javaVersion': java_version,
-    'springBootVersion': sb_version,
-    'framework': framework,
-    'mainDeps': deps,
-    'testCommand': 'mvn test',
-    'buildCommand': 'mvn package',
-    'lintCommand': 'none',
-    'formatCommand': 'none',
-    'jarPackaging': 'jar'
-}
-for k, v in data.items():
-    if isinstance(v, list):
-        v = json.dumps(v)
-    print(f'{k.upper()}={shlex.quote(str(v))}')
+import xml.etree.ElementTree as ET, json, shlex, os, sys
+try:
+    ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
+    root = ET.parse(os.environ['POM_FILE']).getroot()
+    parent = root.find('m:parent', ns)
+    java_version = root.findtext('m:properties/m:java.version', namespaces=ns, default='')
+    sb_version = ''
+    if parent is not None:
+        pid = parent.findtext('m:artifactId', namespaces=ns, default='')
+        if pid == 'spring-boot-starter-parent':
+            sb_version = parent.findtext('m:version', namespaces=ns, default='')
+    deps = [d.findtext('m:artifactId', namespaces=ns) for d in root.findall('m:dependencies/m:dependency', ns)]
+    deps = [d for d in deps if d]
+    framework = 'spring-boot' if sb_version else 'none'
+    data = {
+        'buildTool': 'maven',
+        'javaVersion': java_version,
+        'springBootVersion': sb_version,
+        'framework': framework,
+        'mainDeps': deps,
+        'testCommand': 'mvn test',
+        'buildCommand': 'mvn package',
+        'lintCommand': 'none',
+        'formatCommand': 'none',
+        'jarPackaging': 'jar'
+    }
+    for k, v in data.items():
+        if isinstance(v, list):
+            v = json.dumps(v)
+        print(f'{k.upper()}={shlex.quote(str(v))}')
+except Exception as e:
+    print('', file=sys.stderr)
 ")"
 else
     # Gradle fallback (minimal — only basic schema)
