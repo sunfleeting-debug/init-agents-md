@@ -1853,14 +1853,17 @@ EOF
 chmod +x "$TMPDIR/invalid.sh"
 
 # Valid script: exit 0
-"$DIR/scripts/dry-run-validate.sh" "$TMPDIR/valid.sh" > /dev/null
+# NOTE: invoke via `bash ...` — on Windows/Git Bash git stores scripts without
+# the exec bit (mode 100644), so direct execution is not reliable.
+bash "$DIR/scripts/dry-run-validate.sh" "$TMPDIR/valid.sh" > /dev/null
 assert_eq "$?" "0" "valid script: validation passes"
 
 # Invalid script: exit non-zero
-set +e
-"$DIR/scripts/dry-run-validate.sh" "$TMPDIR/invalid.sh" > /dev/null 2>&1
+# NOTE: no set +e / set -e dance needed — the test runs with set -uo pipefail
+# (no -e), so rc=$? after a failing command is safe and set -e would only
+# change subsequent assertion behavior.
+bash "$DIR/scripts/dry-run-validate.sh" "$TMPDIR/invalid.sh" > /dev/null 2>&1
 rc=$?
-set -e
 [ "$rc" -ne 0 ] && pass "invalid script: validation fails" || fail "invalid script: validation should fail (rc=$rc)"
 ```
 
