@@ -22,20 +22,20 @@ case "$PTYPE" in
 
         while IFS= read -r f; do
             grep -nE '^export (async )?(function|class|const|let|var) [A-Za-z_][A-Za-z0-9_]*' "$f" 2>/dev/null \
-                | sed -E "s#^([0-9]+):export (async )?(function|class|const|let|var) ([A-Za-z_][A-Za-z0-9_]*).*#\4 ${f}#"
+                | sed -E "s#^([0-9]+):export (async )?(function|class|const|let|var) ([A-Za-z_][A-Za-z0-9_]*).*#\4|${f}#"
         done < <(find "$DIR/src" "$DIR/lib" 2>/dev/null -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' \) ! -path '*/node_modules/*') > "$symbols_file"
 
         total=0
         > "$undoc_file"
 
-        while IFS= read -r line; do
-            [ -z "$line" ] && continue
-            name=$(echo "$line" | awk '{print $1}')
-            file=$(echo "$line" | awk '{print $2}')
-            lineno=$(grep -nE "^export (async )?(function|class|const|let|var) $name" "$file" | head -1 | cut -d: -f1)
+        while IFS='|' read -r name file; do
+            [ -z "$name" ] && continue
+            lineno=$(grep -nE "^export (async )?(function|class|const|let|var) $name" "$file" 2>/dev/null | head -1 | cut -d: -f1)
             [ -z "$lineno" ] && continue
 
-            # Check if any of the 5 preceding lines contain a doc comment (/** or */)
+            # Check if any of the 5 preceding lines contain a doc comment (/** or */).
+            # Note: a bare */ in the window (e.g. inline JSDoc) counts as documented;
+            # accepted trade-off for v1.
             prev_start=$((lineno - 5))
             [ "$prev_start" -lt 1 ] && prev_start=1
             if sed -n "${prev_start},$((lineno-1))p" "$file" | grep -qE '/\*\*|\*/'; then
@@ -78,8 +78,8 @@ case "$PTYPE" in
         undoc_file=$(mktemp)
         trap "rm -f $symbols_file $undoc_file" EXIT
         while IFS= read -r f; do
-            grep -nE '^(def|class) [A-Za-z]' "$f" 2>/dev/null | while IFS=: read -r lineno content; do
-                name=$(echo "$content" | sed -E 's/^(def|class) ([A-Za-z_][A-Za-z0-9_]*).*/\2/')
+            grep -nE '^(async def|def|class) [A-Za-z]' "$f" 2>/dev/null | while IFS=: read -r lineno content; do
+                name=$(echo "$content" | sed -E 's/^(async def|def|class) ([A-Za-z_][A-Za-z0-9_]*).*/\2/')
                 if [[ ! "$name" =~ ^_ ]]; then
                     echo "$name|$f|$lineno"
                 fi
@@ -90,9 +90,9 @@ case "$PTYPE" in
         > "$undoc_file"
         while IFS='|' read -r name file lineno; do
             [ -z "$name" ] && continue
-            prev_start=$((lineno - 3))
-            [ "$prev_start" -lt 1 ] && prev_start=1
-            if sed -n "${prev_start},$((lineno-1))p" "$file" | grep -qE '"""'; then
+            # Python docstrings are the first body line (line+1), not before the def.
+            next_start=$((lineno + 2))
+            if sed -n "${lineno},${next_start}p" "$file" | grep -qE '"""'; then
                 :
             else
                 echo "$name|$file|$lineno" >> "$undoc_file"
@@ -125,6 +125,7 @@ case "$PTYPE" in
     java)
         # Simplified: scan for "public class NAME" or "public TYPE NAME("
         # Not exhaustively tested in fixtures; basic schema is enough for v1.
+        # Limitation: counts only top-level public classes/methods at column 0.
         total=0
         undoc_count=0
         coverage="1.00"
