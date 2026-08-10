@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Identify project type from manifest files in a directory.
 # Usage: detect.sh <project-dir>
-# Output: "node" | "python" | "java" | "unknown"
+# Output: "node" | "python" | "java" | "unknown" (on stdout)
+# Exit codes: 0 = detected, 1 = unknown, 2 = usage error (usage on stderr)
 
 set -uo pipefail
 

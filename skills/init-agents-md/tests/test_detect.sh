@@ -4,18 +4,30 @@ source "$(dirname "$0")/helpers.sh"
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-result=$("$DIR/scripts/detect.sh" "$(fix node-project)")
+result=$(bash "$DIR/scripts/detect.sh" "$(fix node-project)")
 assert_eq "$result" "node" "node-project → node"
 
-result=$("$DIR/scripts/detect.sh" "$(fix python-project)")
+result=$(bash "$DIR/scripts/detect.sh" "$(fix python-project)")
 assert_eq "$result" "python" "python-project → python"
 
-result=$("$DIR/scripts/detect.sh" "$(fix java-project)")
+result=$(bash "$DIR/scripts/detect.sh" "$(fix java-project)")
 assert_eq "$result" "java" "java-project → java"
 
 # Missing arg should emit usage and fail
-if "$DIR/scripts/detect.sh" 2>/dev/null; then
+if bash "$DIR/scripts/detect.sh" 2>/dev/null; then
     fail "detect.sh with no arg should exit non-zero"
 else
     pass "detect.sh with no arg exits non-zero"
 fi
+
+# Unknown project type should emit "unknown" and exit 1
+tmp=$(mktemp -d)
+result=$(bash "$DIR/scripts/detect.sh" "$tmp")
+rc=$?
+assert_eq "$result" "unknown" "empty dir → unknown"
+if [ "$rc" -eq 1 ]; then
+    pass "detect.sh with unknown project exits 1"
+else
+    fail "detect.sh with unknown project should exit 1 (got $rc)"
+fi
+rm -rf "$tmp"

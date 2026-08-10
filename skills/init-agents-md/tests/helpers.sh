@@ -46,7 +46,7 @@ assert_json_eq() {
     assert_eq "$actual" "$3" "$4"
 }
 
-# Resolve a fixture path. Usage: fix "node-project" "package.json"
+# Resolve a fixture path. Usage: fix "node-project" or fix "node-project" "package.json"
 fix() {
     echo "${BASH_SOURCE[0]%/*}/fixtures/$1${2:+/$2}"
 }
