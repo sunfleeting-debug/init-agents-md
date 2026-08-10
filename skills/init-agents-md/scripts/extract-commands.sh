@@ -49,6 +49,8 @@ case "$TYPE" in
             } | with_entries(select(.value != "none"))'
         ;;
     java)
+        # "none" must be dropped along with null so downstream wrapper-script
+        # templates (lint.sh/format.sh) don't generate literal "none" commands.
         bt=$(echo "$DETECT" | jq -r '.buildTool')
         jq -n \
             --arg bt "$bt" \
@@ -61,7 +63,7 @@ case "$TYPE" in
                 format:    ($detect.formatCommand // null),
                 typecheck: null,
                 setup:     ($bt + " install")
-            } | with_entries(if .value == null then empty else . end)'
+            } | with_entries(if .value == null or .value == "none" then empty else . end)'
         ;;
     *)
         echo "extract-commands.sh: unknown type $TYPE" >&2
