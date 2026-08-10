@@ -34,7 +34,9 @@ add_item() {
 PTYPE=$(echo "$DETECT" | jq -r '.type')
 case "$PTYPE" in
     node)
-        if ! find "$DIR" -path '*/node_modules' -prune -o -type f \( -name 'logger.ts' -o -name 'logger.js' -o -name 'pino*.ts' -o -name 'winston*.ts' \) -print 2>/dev/null | grep -q .; then
+        # Match .js loggers too (JS projects use pino.js/winston.js), and prune
+        # build output so dist/logger.ts or .next/logger.js can't suppress the gap.
+        if ! find "$DIR" -path '*/node_modules' -prune -o -path '*/dist' -prune -o -path '*/.next' -prune -o -type f \( -name 'logger.ts' -o -name 'logger.js' -o -name 'pino*.ts' -o -name 'pino*.js' -o -name 'winston*.ts' -o -name 'winston*.js' \) -print 2>/dev/null | grep -q .; then
             add_item "logger" "info" "未检测到统一 logger 模块" "生成 src/lib/logger.ts (pino)"
         fi
         ;;
@@ -53,20 +55,22 @@ esac
 # --- docstring coverage ---
 coverage=$(echo "$PUBLIC_API" | jq -r '.coverage // 1.0')
 undoc=$(echo "$PUBLIC_API" | jq -r '.undocumented | length // 0')
-if [ "$coverage" != "null" ] && [ "$coverage" != "1.00" ]; then
-    # Use awk for float comparison
-    if awk -v c="$coverage" 'BEGIN { exit !(c < 0.8) }'; then
-        add_item "docstring-coverage" "info" \
-            "公开 API 注释覆盖率 $(awk -v c="$coverage" 'BEGIN { printf "%.0f%%", c*100 }'),未注释数 $undoc" \
-            "补全公开 API 的 JSDoc / docstring / Javadoc"
-    fi
+# The // 1.0 fallback already covers null/missing coverage, so the awk float
+# comparison below is the sole gate (a literal "1.00" string never reaches here).
+if awk -v c="$coverage" 'BEGIN { exit !(c < 0.8) }'; then
+    pct=$(awk -v c="$coverage" 'BEGIN { printf "%.0f%%", c*100 }')
+    add_item "docstring-coverage" "info" \
+        "公开 API 注释覆盖率 $pct,未注释数 $undoc" \
+        "补全公开 API 的 JSDoc / docstring / Javadoc"
 fi
 
 # --- CI missing ---
 ci=$(echo "$DETECT" | jq -r '.ciSystem')
 if [ "$ci" = "none" ]; then
     has_test=$(echo "$DETECT" | jq -r '.testCommand // .scripts.test // "none"')
-    if [ "$has_test" != "none" ] && [ "$has_test" != "null" ]; then
+    # -n guards the empty-string case: jq's // keeps "" (only null/null values are
+    # replaced), so scripts.test:"" would otherwise slip past the != checks.
+    if [ -n "$has_test" ] && [ "$has_test" != "none" ] && [ "$has_test" != "null" ]; then
         add_item "ci-missing" "warning" "项目有测试但无 CI 配置" "添加 .github/workflows/ci.yml 运行 lint+test"
     fi
 fi
