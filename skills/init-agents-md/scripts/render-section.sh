@@ -37,16 +37,26 @@ PY=python3
 command -v python3 > /dev/null || PY=python
 
 # $DATA may be a JSON literal string OR a path to a JSON file (process
-# substitution passes something like /dev/fd/63). Read file paths here in bash
-# so native Python never has to open an MSYS /dev/fd/... path; the JSON text
-# itself is handed to Python via an env var (not argv) so quotes and Chinese
-# characters cannot break parsing. Note: -r/-e (not -f) is used because a
-# process-substitution path is a pipe, which -f rejects.
-if [ -r "$DATA" ]; then
-    DATA_JSON=$(cat "$DATA")
-else
-    DATA_JSON="$DATA"
-fi
+# substitution passes something like /dev/fd/63). Check the shape first: a
+# JSON literal starts with {, [, or ", so it can never be mistaken for a path
+# (a cwd file named `true`/`null`/`123` would otherwise be read as data).
+# Everything else — including /dev/fd/NN, which starts with / — falls through
+# to a -r check, so a pipe works. File contents are read here in bash so native
+# Python never has to open an MSYS /dev/fd/... path; the JSON text is handed
+# to Python via an env var (not argv) so quotes and Chinese characters cannot
+# break parsing.
+case "$DATA" in
+    '{'*|'['*|'"'*)
+        DATA_JSON="$DATA"
+        ;;
+    *)
+        if [ -r "$DATA" ]; then
+            DATA_JSON=$(cat "$DATA")
+        else
+            DATA_JSON="$DATA"
+        fi
+        ;;
+esac
 
 # Template path also travels via env var (not argv), matching the
 # detect-python.sh convention: no interpolation, no escaping concerns.
@@ -72,11 +82,21 @@ except json.JSONDecodeError as e:
     print(f"render-section.sh: invalid JSON in data argument: {e}", file=sys.stderr)
     sys.exit(1)
 
+# A non-object JSON value (array/string/number/bool/null) has no .get(); reject
+# it with a clean message rather than leaking a Python traceback.
+if not isinstance(data, dict):
+    print(f"render-section.sh: expected a JSON object for data, got: {type(data).__name__}", file=sys.stderr)
+    sys.exit(1)
+
 
 def repl(m):
     key = m.group(1).strip()
     val = data.get(key)
     if val is None:
+        # NOTE: keys missing from data keep their {{token}} in the output
+        # (whitespace-normalized to {{key}}). This is intentional — templates
+        # may contain tokens the caller never supplies, and those tokens are
+        # not consumed downstream anyway.
         return f"{{{{{key}}}}}"
     return str(val)
 
