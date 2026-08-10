@@ -33,7 +33,16 @@ echo "OK: syntax check passed for $SCRIPT"
 # The `if` guard keeps a non-zero exit from --help non-fatal (no set -e in
 # play, but `if` makes that explicit). Most well-formed scripts that don't
 # implement --help print to stderr and exit non-zero.
-if bash "$SCRIPT" --help > /dev/null 2>&1; then
+# Guard with `timeout` (Git Bash ships coreutils timeout) so a wrapper command
+# that blocks (e.g. `npm run dev`) can't hang the validator. A timed-out run
+# (exit 124) is non-zero and lands in the non-fatal NOTE branch. If `timeout`
+# is unavailable, fall back to running the script directly.
+if command -v timeout > /dev/null 2>&1; then
+    timeout 10 bash "$SCRIPT" --help > /dev/null 2>&1
+else
+    bash "$SCRIPT" --help > /dev/null 2>&1
+fi
+if [ $? -eq 0 ]; then
     echo "OK: --help ran successfully"
 else
     # Not necessarily fatal — many wrapper scripts don't implement --help.
@@ -41,23 +50,19 @@ else
     echo "NOTE: --help did not exit 0 (acceptable for wrapper scripts)"
 fi
 
-# Check 3: if script references a known tool (pnpm/npm/mvn/pytest), check it's on PATH
-if grep -qE '\b(pnpm|npm|yarn|bun)\b' "$SCRIPT"; then
-    for tool in pnpm npm yarn bun; do
-        if grep -qE "\b$tool\b" "$SCRIPT"; then
-            if command -v "$tool" > /dev/null 2>&1; then
-                echo "OK: $tool is on PATH"
-            else
-                echo "WARN: $tool not on PATH (script may fail at runtime)"
-            fi
+# Check 3: if the script references a known tool, report whether it's on PATH.
+# Per-tool (not combined), so a script that uses one missing tool gets a WARN
+# even when a sibling tool happens to be installed (e.g. gradle present but
+# mvn absent). `\bmvn\b` does not match `./mvnw`, so wrapper scripts are not
+# mis-flagged.
+for tool in pnpm npm yarn bun mvn gradle pytest; do
+    if grep -qE "\b$tool\b" "$SCRIPT"; then
+        if command -v "$tool" > /dev/null 2>&1; then
+            echo "OK: $tool is on PATH"
+        else
+            echo "WARN: $tool not on PATH (script may fail at runtime)"
         fi
-    done
-fi
-if grep -qE '\b(mvn|gradle)\b' "$SCRIPT" && ! command -v mvn > /dev/null && ! command -v gradle > /dev/null; then
-    echo "WARN: mvn/gradle not on PATH (script may fail at runtime)"
-fi
-if grep -qE '\bpytest\b' "$SCRIPT" && ! command -v pytest > /dev/null; then
-    echo "WARN: pytest not on PATH (script may fail at runtime)"
-fi
+    fi
+done
 
 exit 0
