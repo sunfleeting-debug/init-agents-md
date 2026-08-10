@@ -1487,12 +1487,17 @@ found="[]"
 for entry in "${KNOWN[@]}"; do
     path="${entry%%:*}"
     tool="${entry##*:}"
-    if [ -f "$DIR/$path" ]; then
+    if [ -d "$DIR/$path" ]; then
+        # Directory convention (e.g. .cursor/rules): count contained files.
+        lines=$(find "$DIR/$path" -type f 2>/dev/null | wc -l | tr -d ' ')
+    elif [ -f "$DIR/$path" ]; then
         # Get line count
         lines=$(wc -l < "$DIR/$path" | tr -d ' ')
-        entry_json=$(jq -n --arg p "$path" --arg t "$tool" --arg l "$lines" '{path: $p, tool: $t, lines: ($l | tonumber)}')
-        found=$(echo "$found" | jq --argjson e "$entry_json" '. + [$e]')
+    else
+        continue
     fi
+    entry_json=$(jq -n --arg p "$path" --arg t "$tool" --arg l "$lines" '{path: $p, tool: $t, lines: ($l | tonumber)}')
+    found=$(echo "$found" | jq --argjson e "$entry_json" '. + [$e]')
 done
 
 # Skip AGENTS.md itself (it's our target, not a "vendor" rule).
