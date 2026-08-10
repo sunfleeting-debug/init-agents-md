@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Parse a Node.js project's package.json + lockfiles + workspace markers.
+# Parse a Node.js project's package.json + lockfiles.
 # Usage: detect-node.sh <project-dir>
 # Output: JSON document (see references/node-detection.md for schema)
 # Exit codes: 0 = parsed, 1 = no package.json, 2 = usage error
@@ -33,7 +33,7 @@ if [ -f "$DIR/tsconfig.json" ]; then lang="typescript"; else lang="javascript"; 
 
 # --- framework (heuristic from dependencies) ---
 framework="none"
-for fw in next nuxt remix svelte-kit vite astro gatsby express fastify nestjs; do
+for fw in next nuxt remix @sveltejs/kit vite astro gatsby express fastify nestjs; do
     if jq -e --arg k "$fw" '.dependencies[$k] // .devDependencies[$k] // empty' "$PKG" > /dev/null; then
         framework="$fw"; break
     fi

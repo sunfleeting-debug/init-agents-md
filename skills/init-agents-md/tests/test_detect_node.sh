@@ -17,3 +17,11 @@ assert_json_eq "$JSON" '.scripts.dev'        "next dev"        "scripts.dev=next
 assert_json_eq "$JSON" '.mainDeps | length'  "2"               "mainDeps has 2 entries"
 assert_json_eq "$JSON" '.ciSystem'           "none"            "ciSystem=none (no .github/workflows)"
 assert_json_eq "$JSON" '.dockerSupport'      "false"           "dockerSupport=false"
+
+# envFiles: .env* files are detected and listed as relative names
+tmp=$(mktemp -d)
+cp "$(fix node-project)/package.json" "$tmp/"
+touch "$tmp/.env.example"
+ENVJSON=$(bash "$DIR/scripts/detect-node.sh" "$tmp")
+assert_json_eq "$ENVJSON" '.envFiles[0]' ".env.example" "envFiles lists .env.example"
+rm -rf "$tmp"
