@@ -41,11 +41,13 @@ fi
 # --- Python version (from pyproject) ---
 pythonVersion=""
 if [ -f "$PYPROJECT" ]; then
-    pythonVersion=$($PY -c "
-import sys, json
+    # The manifest path is passed via env var (not interpolated into the
+    # Python source) so quotes/backslashes in the path cannot break parsing.
+    pythonVersion=$(PYPROJECT_FILE="$PYPROJECT" $PY -c "
+import os, sys
 try:
     import tomllib
-    with open('$PYPROJECT', 'rb') as f:
+    with open(os.environ['PYPROJECT_FILE'], 'rb') as f:
         d = tomllib.load(f)
     pv = d.get('project', {}).get('requires-python', '')
     # extract major.minor
@@ -103,17 +105,23 @@ grep -q 'django' "$PYPROJECT" 2>/dev/null && dbMigrations="django"
 # --- mainDeps ---
 mainDeps="[]"
 if [ -f "$PYPROJECT" ]; then
-    mainDeps=$($PY -c "
-import json, tomllib
-with open('$PYPROJECT', 'rb') as f:
-    d = tomllib.load(f)
-deps = d.get('project', {}).get('dependencies', [])
-import re
-names = []
-for dep in deps:
-    m = re.match(r'^([A-Za-z0-9_.-]+)', dep)
-    if m: names.append(m.group(1).lower())
-print(json.dumps(names))
+    # Env-var path passing as above; try/except degrades to '[]' instead of
+    # an empty string (which would crash jq --argjson with a misleading exit 2).
+    mainDeps=$(PYPROJECT_FILE="$PYPROJECT" $PY -c "
+import os, json
+try:
+    import tomllib
+    with open(os.environ['PYPROJECT_FILE'], 'rb') as f:
+        d = tomllib.load(f)
+    deps = d.get('project', {}).get('dependencies', [])
+    import re
+    names = []
+    for dep in deps:
+        m = re.match(r'^([A-Za-z0-9_.-]+)', dep)
+        if m: names.append(m.group(1).lower())
+    print(json.dumps(names))
+except Exception as e:
+    print('[]')
 ")
 fi
 

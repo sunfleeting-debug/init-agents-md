@@ -855,6 +855,8 @@ Expected: FAIL — script missing.
 
 - [ ] **Step 3: Implement detect-java.sh**
 
+> **NOTE (from Task 4 code review):** This script embeds `$POM` inside a Python `-c` string. On Windows the path arrives as backslashes (mangled as escapes) or MSYS `/e/...` form (unopenable by native Python). Include the same cygpath guard from detect-python.sh (`if command -v cygpath > /dev/null 2>&1; then DIR=$(cygpath -m "$1"); else DIR="$1"; fi`) AND pass the manifest path to Python via an environment variable (`POM_FILE="$POM" $PY -c '... os.environ["POM_FILE"] ...'`) rather than string interpolation, so quotes/escapes in paths can't break the `-c` code.
+
 Write to `skills/init-agents-md/scripts/detect-java.sh`:
 
 ```bash
